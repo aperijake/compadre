@@ -8,6 +8,7 @@
 // @HEADER
 #include "Compadre_GMLS.hpp"
 #include "Compadre_Functors.hpp"
+#include <chrono>
 
 namespace Compadre {
 
@@ -240,6 +241,7 @@ void GMLS::generatePolynomialCoefficients(const int number_of_batches, const boo
     }
 
     _initial_index_for_batch = 0;
+    double time = 0.0;
     for (int batch_num=0; batch_num<number_of_batches; ++batch_num) {
 
         auto this_batch_size = std::min(_pc._target_coordinates.extent(0)-_initial_index_for_batch, max_batch_size);
@@ -373,6 +375,9 @@ void GMLS::generatePolynomialCoefficients(const int number_of_batches, const boo
             Kokkos::parallel_for("AssembleStandardPsqrtW", tp, functor_assemble_standard_psqrtw);
             Kokkos::fence();
 
+            // Add timer
+            auto start = std::chrono::high_resolution_clock::now();
+
             // solves P*sqrt(weights) against sqrt(weights)*Identity, stored in RHS
             if (_dense_solver_type == DenseSolverType::LU) {
                     Kokkos::Profiling::pushRegion("LU Factorization");
@@ -387,6 +392,10 @@ void GMLS::generatePolynomialCoefficients(const int number_of_batches, const boo
                 }
                 Kokkos::Profiling::popRegion();
             }
+
+            auto end = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed_seconds = end-start;
+            time += elapsed_seconds.count();
 
             auto functor_compute_prestencil_weights = ComputePrestencilWeights(gmls_basis_data);
             Kokkos::parallel_for("ComputePrestencilWeights", tp, functor_compute_prestencil_weights);
@@ -433,6 +442,8 @@ void GMLS::generatePolynomialCoefficients(const int number_of_batches, const boo
         _initial_index_for_batch += this_batch_size;
         if ((size_t)_initial_index_for_batch == _pc._target_coordinates.extent(0)) break;
     } // end of batch loops
+    std::cout << std::setprecision(6) << std::scientific;
+    std::cout << "IN: Elapsed time for compadre GMLS solve: " << time << "s" << std::endl;
 
     if (clear_cache) {
         // deallocate _P and _w
